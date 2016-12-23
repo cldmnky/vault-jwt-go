@@ -1,13 +1,14 @@
 package vault_jwt
 
 import (
+	"encoding/base64"
 	"crypto/tls"
 	"log"
 	"net/http"
-
 	"github.com/dgrijalva/jwt-go"
 	"github.com/hashicorp/vault/api"
-	"github.com/imdario/mergo"
+	"errors"
+	// "github.com/imdario/mergo"
 )
 
 type Config struct {
@@ -19,14 +20,8 @@ type Config struct {
 
 func newVaultClient(config *Config) (*api.Client, error) {
 	log.Printf("[INFO] (vault_jwt) creating vault/api client")
-	// Create the default config object
-	vaultConfig := api.DefaultConfig()
+	vaultConfig := config.VaultConfig
 
-	// merge configs
-	if err := mergo.Merge(&vaultConfig, config.VaultConfig); err != nil {
-		log.Printf("[ERROR] (vault_jwt) could not merge configs", err)
-		return nil, err
-	}
 	if config.SSLEnabled {
 		tlsConfig := &tls.Config{}
 		vaultConfig.HttpClient.Transport = &http.Transport{
@@ -62,9 +57,59 @@ func (s *SigningMethodVault) Alg() string {
 }
 
 func (s *SigningMethodVault) Sign(signingString string, key interface{}) (string, error) {
-	return "", nil
+	config, ok := key.(Config)
+	if !ok {
+		log.Fatal("Bad config")
+	}
+
+	client, err := newVaultClient(&config)
+	if err != nil {
+		log.Fatalf("Error when creating client: %s", err)
+	}
+
+	secret, err := client.Logical().Write("transit/hmac/" + config.Path, map[string]interface{}{
+		"input": base64.StdEncoding.EncodeToString([]byte(signingString)),
+	})
+
+	returnString, ok := secret.Data["hmac"].(string)
+	if !ok {
+		log.Fatal("Bad return from vault")
+	}
+
+	return jwt.EncodeSegment([]byte(returnString)), nil
 }
 
 func (s *SigningMethodVault) Verify(signingString, signature string, key interface{}) error {
+	var sig []byte
+	var err error
+	if sig, err = jwt.DecodeSegment(signature); err != nil {
+		return err
+	}
+
+	config, ok := key.(Config)
+	if !ok {
+		log.Fatal("Bad config")
+	}
+
+	client, err := newVaultClient(&config)
+	if err != nil {
+		log.Fatalf("Error when creating client: %s", err)
+	}
+
+	result, err := client.Logical().Write("transit/verify/" + config.Path, map[string]interface{}{
+		"input": base64.StdEncoding.EncodeToString([]byte(signingString)),
+		"hmac": string(sig),
+	})
+	if err != nil {
+		log.Fatal("Error in request to vault")
+	}
+
+	isValid, ok := result.Data["valid"].(bool)
+	if !ok {
+		return errors.New("Bad response from vault")
+	}
+	if !isValid {
+		return errors.New("INVALID")
+	}
 	return nil
 }
