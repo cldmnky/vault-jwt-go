@@ -1,14 +1,13 @@
 package vault_jwt
 
 import (
-	"encoding/base64"
 	"crypto/tls"
-	"log"
-	"net/http"
+	"encoding/base64"
+	"errors"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/hashicorp/vault/api"
-	"errors"
-	// "github.com/imdario/mergo"
+	"log"
+	"net/http"
 )
 
 type Config struct {
@@ -67,7 +66,7 @@ func (s *SigningMethodVault) Sign(signingString string, key interface{}) (string
 		log.Fatalf("Error when creating client: %s", err)
 	}
 
-	secret, err := client.Logical().Write("transit/hmac/" + config.Path, map[string]interface{}{
+	secret, err := client.Logical().Write("transit/hmac/"+config.Path, map[string]interface{}{
 		"input": base64.StdEncoding.EncodeToString([]byte(signingString)),
 	})
 
@@ -96,9 +95,9 @@ func (s *SigningMethodVault) Verify(signingString, signature string, key interfa
 		log.Fatalf("Error when creating client: %s", err)
 	}
 
-	result, err := client.Logical().Write("transit/verify/" + config.Path, map[string]interface{}{
+	result, err := client.Logical().Write("transit/verify/"+config.Path, map[string]interface{}{
 		"input": base64.StdEncoding.EncodeToString([]byte(signingString)),
-		"hmac": string(sig),
+		"hmac":  string(sig),
 	})
 	if err != nil {
 		log.Fatal("Error in request to vault")

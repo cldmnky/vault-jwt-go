@@ -1,16 +1,16 @@
 package vault_jwt_test
 
 import (
-	"fmt"
+	"net"
+	"testing"
+	"time"
+
+	"github.com/cldmnky/vault-jwt-go"
+	"github.com/dgrijalva/jwt-go"
 	vaultapi "github.com/hashicorp/vault/api"
 	logicaltransit "github.com/hashicorp/vault/builtin/logical/transit"
 	"github.com/hashicorp/vault/http"
 	"github.com/hashicorp/vault/vault"
-	"testing"
-  "github.com/dgrijalva/jwt-go"
-  "github.com/cldmnky/vault-jwt-go"
-	"time"
-	"net"
 )
 
 type MyCustomClaims struct {
@@ -29,65 +29,64 @@ func TestVault(t *testing.T) {
 }
 
 func testVaultSign(t *testing.T, client *vaultapi.Client, claims MyCustomClaims, config vault_jwt.Config) string {
-		_, err := client.Logical().Write("transit/keys/foo", map[string]interface{}{
-			"type": "aes256-gcm96",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
+	_, err := client.Logical().Write("transit/keys/foo", map[string]interface{}{
+		"type": "aes256-gcm96",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		token2 := jwt.NewWithClaims(jwt.GetSigningMethod("Vault"), claims)
-		ss, _ := token2.SignedString(config)
-		return ss
+	token := jwt.NewWithClaims(jwt.GetSigningMethod("Vault"), claims)
+	ss, _ := token.SignedString(config)
+	return ss
 }
 
 func testVaultVerify(t *testing.T, client *vaultapi.Client, config vault_jwt.Config, sign string) {
-		token, err := jwt.ParseWithClaims(sign, &MyCustomClaims{}, func(token *jwt.Token) (interface{}, error) {
-	    return config, nil
-	  })
+	token, err := jwt.ParseWithClaims(sign, &MyCustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return config, nil
+	})
 
-		if err != nil {
-			t.Fatal(err)
-		}
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		claims, ok := token.Claims.(*MyCustomClaims)
+	claims, ok := token.Claims.(*MyCustomClaims)
 
-
-	  if ok && token.Valid {
-	    fmt.Printf("%v %v\n", claims.Foo, claims.StandardClaims.ExpiresAt)
-	  } else {
-	    t.Fatal(err)
-	  }
+	if ok && token.Valid {
+		t.Logf("%v %v\n", claims.Foo, claims.StandardClaims.ExpiresAt)
+	} else {
+		t.Errorf("Token error %v\n", err)
+	}
 }
 
 func initVault(t *testing.T) (net.Listener, *vaultapi.Client, *vaultapi.Config, string) {
-		err := vault.AddTestLogicalBackend("transit", logicaltransit.Factory)
-		core, _, token := vault.TestCoreUnsealed(t)
-		ln, addr := http.TestServer(t, core)
+	err := vault.AddTestLogicalBackend("transit", logicaltransit.Factory)
+	core, _, token := vault.TestCoreUnsealed(t)
+	ln, addr := http.TestServer(t, core)
 
-		vaultConfig := vaultapi.DefaultConfig()
-		vaultConfig.Address = addr
+	vaultConfig := vaultapi.DefaultConfig()
+	vaultConfig.Address = addr
 
-		vaultClient, err := vaultapi.NewClient(vaultConfig)
-		if err != nil {
-			t.Fatal(err)
-		}
-		vaultClient.SetToken(token)
+	vaultClient, err := vaultapi.NewClient(vaultConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vaultClient.SetToken(token)
 
-		err = vaultClient.Sys().Mount("transit", &vaultapi.MountInput{
-			Type: "transit",
-		})
-		if err != nil {
-			panic(err)
-		}
+	err = vaultClient.Sys().Mount("transit", &vaultapi.MountInput{
+		Type: "transit",
+	})
+	if err != nil {
+		panic(err)
+	}
 
-		_, err = vaultClient.Logical().Write("transit/keys/foo", map[string]interface{}{
-			"type": "aes256-gcm96",
-		})
-		if err != nil {
-			panic(err)
-		}
-		return ln, vaultClient, vaultConfig, token
+	_, err = vaultClient.Logical().Write("transit/keys/foo", map[string]interface{}{
+		"type": "aes256-gcm96",
+	})
+	if err != nil {
+		panic(err)
+	}
+	return ln, vaultClient, vaultConfig, token
 }
 
 func getConf(vaultConfig *vaultapi.Config, vaultToken string) (MyCustomClaims, vault_jwt.Config) {
