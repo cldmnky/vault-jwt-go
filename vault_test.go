@@ -1,6 +1,7 @@
 package vault_jwt_test
 
 import (
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -21,10 +22,11 @@ type MyCustomClaims struct {
 func TestVault(t *testing.T) {
 	ln, vaultClient, vaultConfig, vaultToken := initVault(t)
 	defer ln.Close()
+	fmt.Println("ddd")
 
 	claims, config := getConf(vaultConfig, vaultToken)
-
 	signed := testVaultSign(t, vaultClient, claims, config)
+	fmt.Println(signed)
 	testVaultVerify(t, vaultClient, config, signed)
 }
 

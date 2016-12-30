@@ -36,7 +36,7 @@ func newVaultClient(config *Config) (*api.Client, error) {
 		log.Printf("[DEBUG] (vault_jwt) setting vault token")
 		client.SetToken(config.Token)
 	} else {
-		log.Fatalln("[ERROR] (vault_jwt) no vault token")
+		log.Println("[ERROR] (vault_jwt) no vault token")
 	}
 	return client, nil
 }
@@ -58,12 +58,14 @@ func (s *SigningMethodVault) Alg() string {
 func (s *SigningMethodVault) Sign(signingString string, key interface{}) (string, error) {
 	config, ok := key.(Config)
 	if !ok {
-		log.Fatal("Bad config")
+		log.Println("Bad config")
+		return "", errors.New("Bad vault config")
 	}
 
 	client, err := newVaultClient(&config)
 	if err != nil {
-		log.Fatalf("Error when creating client: %s", err)
+		log.Printf("Error when creating client: %s", err)
+		return "", nil
 	}
 
 	secret, err := client.Logical().Write("transit/hmac/"+config.Path, map[string]interface{}{
@@ -72,7 +74,9 @@ func (s *SigningMethodVault) Sign(signingString string, key interface{}) (string
 
 	returnString, ok := secret.Data["hmac"].(string)
 	if !ok {
-		log.Fatal("Bad return from vault")
+		log.Printf("Bad return from vault")
+		return "", nil
+
 	}
 
 	return jwt.EncodeSegment([]byte(returnString)), nil
@@ -87,12 +91,14 @@ func (s *SigningMethodVault) Verify(signingString, signature string, key interfa
 
 	config, ok := key.(Config)
 	if !ok {
-		log.Fatal("Bad config")
+		log.Println("Bad vault config")
+		return errors.New("Bad vault config")
 	}
 
 	client, err := newVaultClient(&config)
 	if err != nil {
-		log.Fatalf("Error when creating client: %s", err)
+		log.Printf("Error when creating client: %s", err.Error())
+		return err
 	}
 
 	result, err := client.Logical().Write("transit/verify/"+config.Path, map[string]interface{}{
@@ -100,7 +106,8 @@ func (s *SigningMethodVault) Verify(signingString, signature string, key interfa
 		"hmac":  string(sig),
 	})
 	if err != nil {
-		log.Fatal("Error in request to vault")
+		log.Printf("Error in request to vault: %s", err.Error())
+		return err
 	}
 
 	isValid, ok := result.Data["valid"].(bool)
